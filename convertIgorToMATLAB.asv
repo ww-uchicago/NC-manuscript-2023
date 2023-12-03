@@ -1,0 +1,70 @@
+clear
+clc
+
+parent = 'C:\Users\Hector\Box\Postdoc\';
+
+date = '20201209';
+
+folder = [parent date '\Experiment Folder'];
+
+ibw_fns = dir([folder '\w*' '.ibw']);
+
+for i = 2:size(ibw_fns,1)
+    D = IBWread([folder '\w' num2str((i-2)) '.ibw']);
+        
+    start_id = strfind(D.WaveNotes, 'PATTERN');
+    
+    end_id = strfind(D.WaveNotes, ';H');
+    
+    pattern = D.WaveNotes((start_id + length('PATTERN:')):(end_id -1));
+    
+    stim = IBWread([folder '\maf\' pattern '_DA0.ibw']);
+    
+    D.stim_DA0 = stim.y;
+    
+    if pattern == 'membTest'
+        data = filterData(D.y, (D.dx*1000000), 'low_cut',0.1, 'high_cut', 2000, 'order', 1);
+        para.deltaV=10;  % deltaV=10mv, the default in the lab
+        para.sampInt = D.dx;
+        para.sr=1/para.sampInt;
+        para.bsl=1:(0.090/para.sampInt);  % the baseline subtraction, taking the first 100ms of data as baseline.
+        wsize = 0.45*para.sr;
+        wsize = int64(wsize);
+        locs = linspace(0,24,25);
+        locs = locs*0.45*para.sr + 1;
+        locs = int64(locs);
+        data = clip(data,locs,wsize);
+        data = data{1,1};
+
+        para.mid=floor(size(data,1)/2);
+        para.mwin= para.mid-(0.050/para.sampInt):para.mid+500;
+        para.bsl2=size(data,1)-500:size(data,1);
+
+        % calculate Ra and Rm
+        result.holding=mean2(data(para.bsl,:));  % hold ing current pA
+        result.rm= para.deltaV./ mean(mean(data(para.bsl,:))-mean(data(para.mwin,:)))*1000;  % into Mhom
+        result.ra=mean(para.deltaV./[abs(mean2(data(para.bsl,:))-mean(min(data(1:para.mid,:)))) ...,
+            abs(mean2(data(para.bsl2,:))-mean(max(data(para.mid:end,:))))])*1000;  % into mHom
+        % plot figure out
+        h=figure('Color',[1 1 1]);
+        scnsize = get(0,'ScreenSize');
+        set(h, 'Position', [scnsize(3)/20 scnsize(4)/4 scnsize(3)*9/10 scnsize(4)*1/2])
+
+        p=plot((1:size(data,1))/para.sr,data,'color',[0 0 0.2],'LineWidth',1);
+        box off; hold all;
+        % plot the baseline region 1, 2 and 3
+        plot(para.bsl/para.sr, mean2(data(para.bsl,:)).*ones(1,length(para.bsl))+50,'color',[0.8 0.4 0.4],'LineWidth',4);
+        plot(para.bsl2/para.sr, mean2(data(para.bsl2,:)).*ones(1,length(para.bsl2))+50,'color',[0.8 0.4 0.4],'LineWidth',4);
+        plot(para.mwin/para.sr , mean2(data(para.mwin ,:)).*ones(1,length(para.mwin) )-50,'color',[0.8 0.4 0.4],'LineWidth',4);
+        hold off;
+        xlabel('Time/s'); ylabel(' Current/pA');
+        % calculate the resistance
+        t=title(['R_a' ' ' num2str(result.ra), '       ' 'R_m' ' ' num2str(result.rm)]);
+        set(t,'fontsize',14);
+        saveas(h,regexprep([pname fname],'.abf','_membraneTest.fig'));
+    end
+    
+    save([folder '\' date 'w' num2str((i-2)) '.mat'],'D');
+    
+    clearvars D start_id end_id stim pattern
+end
